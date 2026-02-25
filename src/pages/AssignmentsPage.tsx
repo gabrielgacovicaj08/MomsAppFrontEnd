@@ -1,5 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
+import LanguageSwitcher from "../components/LanguageSwitcher";
+import useI18n from "../i18n/useI18n";
 import {
   createAssignment,
   getAssignmentsByDay,
@@ -26,13 +28,30 @@ function localInputToDateTime7(value: string): string | null {
   return `${date}T${hours}:${minutes}:${seconds}.0000000`;
 }
 
+function formatDateLocal(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function addDays(dateString: string, days: number): string | null {
+  const baseDate = new Date(`${dateString}T00:00:00`);
+  if (Number.isNaN(baseDate.getTime())) return null;
+  baseDate.setDate(baseDate.getDate() + days);
+  return formatDateLocal(baseDate);
+}
+
 export default function AssignmentsPage() {
+  const { t } = useI18n();
+  const toArray = <T,>(value: unknown): T[] => (Array.isArray(value) ? value : []);
   const [date, setDate] = useState("");
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [structures, setStructures] = useState<Structure[]>([]);
   const [employeeId, setEmployeeId] = useState("");
   const [structureId, setStructureId] = useState("");
+  const [assignmentDays, setAssignmentDays] = useState("1");
   const [shiftStart, setShiftStart] = useState("");
   const [shiftEnd, setShiftEnd] = useState("");
   const [loading, setLoading] = useState(false);
@@ -47,7 +66,7 @@ export default function AssignmentsPage() {
   );
   const [startedAtInput, setStartedAtInput] = useState("");
   const [endedAtInput, setEndedAtInput] = useState("");
-  const [workLogNotes, setWorkLogNotes] = useState("Completed by admin.");
+  const [workLogNotes, setWorkLogNotes] = useState(t("Completed by admin."));
   const [isSavingWorkLog, setIsSavingWorkLog] = useState(false);
   const [workLogMessage, setWorkLogMessage] = useState<string | null>(null);
   const isAdmin = isCurrentUserAdmin();
@@ -57,17 +76,17 @@ export default function AssignmentsPage() {
       try {
         setMetaLoading(true);
         const structuresResponse = await getStructures();
-
-        setStructures(structuresResponse.data.filter((structure) => structure.is_active));
+        const structuresData = toArray<Structure>(structuresResponse.data);
+        setStructures(structuresData.filter((structure) => structure.is_active));
       } catch {
-        setCreateError("Failed to load structures.");
+        setCreateError(t("Failed to load structures."));
       } finally {
         setMetaLoading(false);
       }
     }
 
     fetchMeta();
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (!date) {
@@ -93,8 +112,10 @@ export default function AssignmentsPage() {
           getAvailableEmployeesPerDay(date),
         ]);
 
-        setAssignments(assignmentsResponse.data);
-        setWorkers(workersResponse.data.filter((worker) => worker.is_active));
+        const assignmentsData = toArray<Assignment>(assignmentsResponse.data);
+        const workersData = toArray<Worker>(workersResponse.data);
+        setAssignments(assignmentsData);
+        setWorkers(workersData.filter((worker) => worker.is_active));
         setSelectedAssignmentId(null);
         setStartedAtInput("");
         setEndedAtInput("");
@@ -103,7 +124,7 @@ export default function AssignmentsPage() {
         const message =
           err instanceof Error
             ? err.message
-            : "Failed to load assignments or available workers.";
+            : t("Failed to load assignments or available workers.");
         setError(message);
       } finally {
         setLoading(false);
@@ -112,7 +133,7 @@ export default function AssignmentsPage() {
     }
 
     fetchData();
-  }, [date]);
+  }, [date, t]);
 
   const toApiTime = (value: string) => {
     if (!value) {
@@ -126,12 +147,18 @@ export default function AssignmentsPage() {
     event.preventDefault();
 
     if (!date) {
-      setCreateError("Please select an assignment date first.");
+      setCreateError(t("Please select an assignment date first."));
       return;
     }
 
     if (!employeeId || !structureId) {
-      setCreateError("Please select a worker and a structure.");
+      setCreateError(t("Please select a worker and a structure."));
+      return;
+    }
+
+    const numberOfDays = Number.parseInt(assignmentDays, 10);
+    if (!Number.isInteger(numberOfDays) || numberOfDays < 1) {
+      setCreateError(t("Please enter a valid number of days."));
       return;
     }
 
@@ -140,23 +167,55 @@ export default function AssignmentsPage() {
       setCreateError(null);
       setCreateSuccess(null);
 
-      await createAssignment({
-        work_date: date,
-        employee_id: Number(employeeId),
-        structure_id: Number(structureId),
-        shift_start: toApiTime(shiftStart),
-        shift_end: toApiTime(shiftEnd),
-      });
+      let createdCount = 0;
+      let lastErrorMessage = "";
 
-      setCreateSuccess("Assignment created.");
+      for (let offset = 0; offset < numberOfDays; offset += 1) {
+        const targetDate = addDays(date, offset);
+        if (!targetDate) {
+          lastErrorMessage = t("Please select an assignment date first.");
+          continue;
+        }
+
+        try {
+          await createAssignment({
+            work_date: targetDate,
+            employee_id: Number(employeeId),
+            structure_id: Number(structureId),
+            shift_start: toApiTime(shiftStart),
+            shift_end: toApiTime(shiftEnd),
+          });
+          createdCount += 1;
+        } catch (err: unknown) {
+          lastErrorMessage =
+            err instanceof Error ? err.message : t("Failed to create assignment.");
+        }
+      }
+
+      if (createdCount === numberOfDays) {
+        setCreateSuccess(
+          numberOfDays === 1
+            ? t("Assignment created.")
+            : t("Created {count} assignments.", { count: createdCount }),
+        );
+      } else if (createdCount > 0) {
+        setCreateError(
+          `${t("Created {count} assignments.", { count: createdCount })} ${t(
+            "Some assignments could not be created.",
+          )} ${lastErrorMessage}`.trim(),
+        );
+      } else {
+        setCreateError(lastErrorMessage || t("Failed to create assignment."));
+      }
+
       setShiftStart("");
       setShiftEnd("");
 
       const refreshed = await getAssignmentsByDay(date);
-      setAssignments(refreshed.data);
+      setAssignments(toArray<Assignment>(refreshed.data));
     } catch (err: unknown) {
       const message =
-        err instanceof Error ? err.message : "Failed to create assignment.";
+        err instanceof Error ? err.message : t("Failed to create assignment.");
       setCreateError(message);
     } finally {
       setIsCreating(false);
@@ -165,24 +224,24 @@ export default function AssignmentsPage() {
 
   const handleSubmitWorkLog = async () => {
     if (!selectedAssignmentId) {
-      setWorkLogMessage("Select an assignment first.");
+      setWorkLogMessage(t("Select an assignment first."));
       return;
     }
 
     if (!startedAtInput || !endedAtInput) {
-      setWorkLogMessage("Started at and ended at are required.");
+      setWorkLogMessage(t("Started at and ended at are required."));
       return;
     }
 
     const startedAt = localInputToDateTime7(startedAtInput);
     const endedAt = localInputToDateTime7(endedAtInput);
     if (!startedAt || !endedAt) {
-      setWorkLogMessage("Invalid start/end date-time format.");
+      setWorkLogMessage(t("Invalid start/end date-time format."));
       return;
     }
 
     if (new Date(startedAtInput) > new Date(endedAtInput)) {
-      setWorkLogMessage("Ended at must be after started at.");
+      setWorkLogMessage(t("Ended at must be after started at."));
       return;
     }
 
@@ -194,7 +253,7 @@ export default function AssignmentsPage() {
         assignment_id: String(selectedAssignmentId),
         started_at: startedAt,
         ended_at: endedAt,
-        notes: workLogNotes.trim() || "Completed by admin.",
+        notes: workLogNotes.trim() || t("Completed by admin."),
       });
 
       setAssignments((current) =>
@@ -204,9 +263,9 @@ export default function AssignmentsPage() {
             : assignment,
         ),
       );
-      setWorkLogMessage("Work log submitted successfully.");
+      setWorkLogMessage(t("Work log submitted successfully."));
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Failed to submit work log.";
+      const message = err instanceof Error ? err.message : t("Failed to submit work log.");
       setWorkLogMessage(message);
     } finally {
       setIsSavingWorkLog(false);
@@ -219,29 +278,30 @@ export default function AssignmentsPage() {
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.22em] text-teal-700">
-              MomsApp
+              {t("MomsApp")}
             </p>
             <h1 className="mt-1 text-3xl font-extrabold text-slate-900">
-              Daily Assignments
+              {t("Daily Assignments")}
             </h1>
             <p className="mt-1 text-sm text-slate-600">
-              Pick a date to view all scheduled assignments.
+              {t("Pick a date to view all scheduled assignments.")}
             </p>
           </div>
           <Link
             to="/admin"
             className="rounded-2xl border border-teal-900/15 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:-translate-y-0.5 hover:bg-teal-50"
           >
-            Back to Home
+            {t("Back to Home")}
           </Link>
         </div>
+        <LanguageSwitcher />
 
         <div className="rounded-[28px] border border-teal-900/10 bg-white/90 p-5 shadow-[0_18px_60px_-35px_rgba(2,44,34,0.6)] backdrop-blur-sm">
           <label
             htmlFor="assignment-date"
             className="mb-2 block text-sm font-semibold text-slate-700"
           >
-            Assignment Date
+            {t("Assignment Date")}
           </label>
           <input
             id="assignment-date"
@@ -253,7 +313,7 @@ export default function AssignmentsPage() {
 
           <form onSubmit={handleCreateAssignment} className="mt-5 grid gap-3">
             <p className="text-sm font-semibold text-slate-800">
-              Create Assignment
+              {t("Create Assignment")}
             </p>
 
             <div className="grid gap-3 sm:grid-cols-2">
@@ -265,10 +325,10 @@ export default function AssignmentsPage() {
               >
                 <option value="">
                   {!date
-                    ? "Select a date first"
+                    ? t("Select a date first")
                     : workersLoading
-                      ? "Loading workers..."
-                      : "Select worker"}
+                      ? t("Loading workers...")
+                      : t("Select worker")}
                 </option>
                 {workers.map((worker) => (
                   <option key={worker.employee_id} value={worker.employee_id}>
@@ -283,7 +343,7 @@ export default function AssignmentsPage() {
                 disabled={metaLoading}
                 className="w-full rounded-2xl border border-slate-300 bg-white px-3.5 py-2.5 text-slate-900 outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100 disabled:opacity-60"
               >
-                <option value="">Select structure</option>
+                <option value="">{t("Select structure")}</option>
                 {structures.map((structure) => (
                   <option
                     key={structure.structure_id}
@@ -296,6 +356,15 @@ export default function AssignmentsPage() {
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={assignmentDays}
+                onChange={(event) => setAssignmentDays(event.target.value)}
+                className="w-full rounded-2xl border border-slate-300 px-3.5 py-2.5 text-slate-900 outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
+                placeholder={t("Number of days")}
+              />
               <input
                 type="time"
                 value={shiftStart}
@@ -316,10 +385,10 @@ export default function AssignmentsPage() {
                 disabled={isCreating || metaLoading}
                 className="rounded-2xl bg-gradient-to-r from-teal-800 to-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isCreating ? "Creating..." : "Create Assignment"}
+                {isCreating ? t("Creating...") : t("Create Assignment")}
               </button>
               <p className="text-xs text-slate-500">
-                Shift times are optional.
+                {t("Shift times are optional.")}
               </p>
             </div>
 
@@ -339,7 +408,7 @@ export default function AssignmentsPage() {
 
         {loading && (
           <div className="mt-6 rounded-2xl border border-teal-900/10 bg-white p-4 text-sm text-slate-600 shadow-sm">
-            Loading assignments...
+            {t("Loading assignments...")}
           </div>
         )}
 
@@ -352,9 +421,9 @@ export default function AssignmentsPage() {
         {!loading && !error && date && assignments.length === 0 && (
           <div className="mt-6 rounded-2xl border border-teal-900/10 bg-white p-6 text-center shadow-sm">
             <p className="font-semibold text-slate-800">
-              No assignments found.
+              {t("No assignments found.")}
             </p>
-            <p className="mt-1 text-sm text-slate-600">Try another date.</p>
+            <p className="mt-1 text-sm text-slate-600">{t("Try another date.")}</p>
           </div>
         )}
 
@@ -385,14 +454,14 @@ export default function AssignmentsPage() {
 
                 <div className="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
                   <p>
-                    <span className="font-semibold text-slate-900">Date:</span>{" "}
-                    {assignment.work_date}
+                    <span className="font-semibold text-slate-900">{t("Date:")}</span>{" "}
+                    {assignment.work_date ?? t("Not set")}
                   </p>
                   <p>
-                    <span className="font-semibold text-slate-900">Shift:</span>{" "}
+                    <span className="font-semibold text-slate-900">{t("Shift:")}</span>{" "}
                     {assignment.shift_start && assignment.shift_end
                       ? `${assignment.shift_start} - ${assignment.shift_end}`
-                      : "Not set"}
+                      : t("Not set")}
                   </p>
                 </div>
 
@@ -413,8 +482,8 @@ export default function AssignmentsPage() {
                       className="rounded-xl border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-800 hover:bg-teal-100"
                     >
                       {selectedAssignmentId === assignment.assignment_id
-                        ? "Hide Work Log"
-                        : "Submit Work Log"}
+                        ? t("Hide Work Log")
+                        : t("Submit Work Log")}
                     </button>
                   </div>
                 )}
@@ -423,11 +492,11 @@ export default function AssignmentsPage() {
 
             {isAdmin && selectedAssignmentId && (
               <div className="rounded-2xl border border-teal-900/10 bg-white p-4 shadow-sm">
-                <p className="text-sm font-semibold text-slate-900">Submit Work Log</p>
+                <p className="text-sm font-semibold text-slate-900">{t("Submit Work Log")}</p>
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   <div>
                     <label className="mb-1 block text-xs font-semibold text-slate-700">
-                      Started At
+                      {t("Started At")}
                     </label>
                     <input
                       type="datetime-local"
@@ -438,7 +507,7 @@ export default function AssignmentsPage() {
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-semibold text-slate-700">
-                      Ended At
+                      {t("Ended At")}
                     </label>
                     <input
                       type="datetime-local"
@@ -451,7 +520,7 @@ export default function AssignmentsPage() {
 
                 <div className="mt-3">
                   <label className="mb-1 block text-xs font-semibold text-slate-700">
-                    Notes
+                    {t("Notes")}
                   </label>
                   <textarea
                     value={workLogNotes}
@@ -481,7 +550,7 @@ export default function AssignmentsPage() {
                   disabled={isSavingWorkLog || !startedAtInput || !endedAtInput}
                   className="mt-3 rounded-xl bg-gradient-to-r from-teal-800 to-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {isSavingWorkLog ? "Submitting..." : "Submit Work Log"}
+                  {isSavingWorkLog ? t("Submitting...") : t("Submit Work Log")}
                 </button>
               </div>
             )}

@@ -1,4 +1,5 @@
 import axios from "axios";
+import { getStoredToken } from "../utils/auth";
 
 const BASE_URL = "https://localhost:7290";
 
@@ -10,7 +11,7 @@ export const instance = axios.create({
 });
 
 instance.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
+  const token = getStoredToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }

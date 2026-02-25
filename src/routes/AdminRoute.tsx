@@ -1,13 +1,13 @@
 import { Navigate } from "react-router-dom";
 import type { ReactNode } from "react";
-import { isCurrentUserAdmin } from "../utils/auth";
+import { getStoredToken, isCurrentUserAdmin } from "../utils/auth";
 
 type AdminRouteProps = {
   children: ReactNode;
 };
 
 export default function AdminRoute({ children }: AdminRouteProps) {
-  const token = localStorage.getItem("token");
+  const token = getStoredToken();
 
   if (!token) {
     return <Navigate to="/" replace />;

@@ -1,6 +1,6 @@
 export type Assignment = {
   assignment_id: number;
-  work_date: string; // "YYYY-MM-DD"
+  work_date: string | null; // "YYYY-MM-DD" or null on legacy/malformed records
   first_name: string;
   last_name: string;
   structure_name: string;

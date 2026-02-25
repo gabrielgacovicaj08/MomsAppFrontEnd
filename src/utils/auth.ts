@@ -1,4 +1,40 @@
 type JwtPayload = Record<string, unknown>;
+const ACCESS_TOKEN_KEY = "token";
+const REFRESH_TOKEN_KEY = "refreshToken";
+
+function getStorageWithToken(): Storage | null {
+  if (localStorage.getItem(ACCESS_TOKEN_KEY)) return localStorage;
+  if (sessionStorage.getItem(ACCESS_TOKEN_KEY)) return sessionStorage;
+  return null;
+}
+
+export function getStoredToken(): string | null {
+  const storage = getStorageWithToken();
+  if (!storage) return null;
+  return storage.getItem(ACCESS_TOKEN_KEY);
+}
+
+export function persistAuthTokens(
+  accessToken: string,
+  refreshToken: string,
+  rememberMe: boolean,
+): void {
+  const selectedStorage = rememberMe ? localStorage : sessionStorage;
+  const alternateStorage = rememberMe ? sessionStorage : localStorage;
+
+  alternateStorage.removeItem(ACCESS_TOKEN_KEY);
+  alternateStorage.removeItem(REFRESH_TOKEN_KEY);
+
+  selectedStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
+  selectedStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+}
+
+export function clearAuthTokens(): void {
+  localStorage.removeItem(ACCESS_TOKEN_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
+  sessionStorage.removeItem(ACCESS_TOKEN_KEY);
+  sessionStorage.removeItem(REFRESH_TOKEN_KEY);
+}
 
 function parseJwt(token: string): JwtPayload | null {
   try {
@@ -56,13 +92,13 @@ export function isTokenWorker(token: string): boolean {
 }
 
 export function isCurrentUserAdmin(): boolean {
-  const token = localStorage.getItem("token");
+  const token = getStoredToken();
   if (!token) return false;
   return isTokenAdmin(token);
 }
 
 export function getCurrentUserDisplayName(): string {
-  const token = localStorage.getItem("token");
+  const token = getStoredToken();
   if (!token) return "Worker";
 
   const payload = parseJwt(token);
@@ -96,7 +132,7 @@ export function getCurrentUserNameParts(): {
   firstName: string;
   lastName: string;
 } {
-  const token = localStorage.getItem("token");
+  const token = getStoredToken();
   if (!token) {
     return { firstName: "", lastName: "" };
   }
@@ -147,7 +183,7 @@ function parseNumericClaim(value: unknown): number | null {
 }
 
 export function getCurrentUserEmployeeId(): number | null {
-  const token = localStorage.getItem("token");
+  const token = getStoredToken();
   if (!token) return null;
 
   const payload = parseJwt(token);

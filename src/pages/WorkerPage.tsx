@@ -1,16 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import LanguageSwitcher from "../components/LanguageSwitcher";
+import useI18n from "../i18n/useI18n";
 import { getAssignmentsByEmployeeId } from "../services/assignments";
 import { createWorkLog } from "../services/workLogs";
 import type { Assignment } from "../types/assignments";
 import {
+  clearAuthTokens,
   getCurrentUserDisplayName,
   getCurrentUserEmployeeId,
+  getStoredToken,
   isCurrentUserAdmin,
 } from "../utils/auth";
 
 function getToday() {
-  return new Date().toISOString().split("T")[0];
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function localInputToDateTime7(value: string): string | null {
@@ -30,6 +38,8 @@ function localInputToDateTime7(value: string): string | null {
 }
 
 export default function WorkerPage() {
+  const { t } = useI18n();
+  const toArray = <T,>(value: unknown): T[] => (Array.isArray(value) ? value : []);
   const navigate = useNavigate();
   const [date, setDate] = useState(getToday());
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -49,7 +59,7 @@ export default function WorkerPage() {
   const currentWorkerId = useMemo(() => getCurrentUserEmployeeId(), []);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
+    const token = getStoredToken();
     if (!token) {
       navigate("/");
       return;
@@ -67,20 +77,25 @@ export default function WorkerPage() {
         setError(null);
         if (!currentWorkerId) {
           setAssignments([]);
-          setError("Employee ID is missing from your login token.");
+          setError(t("Employee ID is missing from your login token."));
           return;
         }
 
         const response = await getAssignmentsByEmployeeId(currentWorkerId);
+        const assignmentsData = toArray<Assignment>(response.data);
         setAssignments(
-          response.data.filter((assignment) => assignment.work_date.startsWith(date)),
+          assignmentsData.filter(
+            (assignment) =>
+              typeof assignment.work_date === "string" &&
+              assignment.work_date.startsWith(date),
+          ),
         );
         setSelectedAssignmentId(null);
         setStartedAtInput("");
         setEndedAtInput("");
       } catch (err: unknown) {
         const message =
-          err instanceof Error ? err.message : "Failed to load assignments.";
+          err instanceof Error ? err.message : t("Failed to load assignments.");
         setError(message);
       } finally {
         setLoading(false);
@@ -88,11 +103,11 @@ export default function WorkerPage() {
     }
 
     fetchAssignments();
-  }, [date, currentWorkerId]);
+  }, [date, currentWorkerId, t]);
 
   const handleCompleteAssignment = async (assignmentId: number) => {
     if (!currentWorkerId) {
-      setActionError("Employee ID is missing from your login token.");
+      setActionError(t("Employee ID is missing from your login token."));
       return;
     }
 
@@ -102,7 +117,7 @@ export default function WorkerPage() {
       setActionSuccess(null);
 
       if (!startedAtInput || !endedAtInput) {
-        setActionError("Please set both start and end time before submitting.");
+        setActionError(t("Please set both start and end time before submitting."));
         return;
       }
 
@@ -110,12 +125,12 @@ export default function WorkerPage() {
       const endedAt = localInputToDateTime7(endedAtInput);
 
       if (!startedAt || !endedAt) {
-        setActionError("Invalid date/time format for start or end.");
+        setActionError(t("Invalid date/time format for start or end."));
         return;
       }
 
       if (new Date(startedAtInput) > new Date(endedAtInput)) {
-        setActionError("End time must be after start time.");
+        setActionError(t("End time must be after start time."));
         return;
       }
 
@@ -123,7 +138,7 @@ export default function WorkerPage() {
         assignment_id: String(assignmentId),
         started_at: startedAt,
         ended_at: endedAt,
-        notes: "Completed by worker.",
+        notes: t("Completed by worker."),
       });
 
       setAssignments((current) =>
@@ -133,10 +148,10 @@ export default function WorkerPage() {
             : assignment,
         ),
       );
-      setActionSuccess("Work log submitted. Assignment marked as completed.");
+      setActionSuccess(t("Work log submitted. Assignment marked as completed."));
     } catch (err: unknown) {
       const message =
-        err instanceof Error ? err.message : "Failed to submit work log.";
+        err instanceof Error ? err.message : t("Failed to submit work log.");
       setActionError(message);
     } finally {
       setCompletingAssignmentId(null);
@@ -156,34 +171,36 @@ export default function WorkerPage() {
       <div className="mx-auto max-w-5xl">
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-xs uppercase tracking-[0.22em] text-teal-700">Worker</p>
+            <p className="text-xs uppercase tracking-[0.22em] text-teal-700">{t("Worker")}</p>
             <h1 className="mt-1 text-3xl font-extrabold text-slate-900">
-              Welcome, {currentWorkerName}
+              {t("Welcome, {name}", { name: currentWorkerName })}
             </h1>
             <p className="mt-1 text-sm text-slate-600">
-              View your day and keep track of assignments.
+              {t("View your day and keep track of assignments.")}
             </p>
           </div>
           <button
             type="button"
             onClick={() => {
-              localStorage.removeItem("token");
-              localStorage.removeItem("refreshToken");
+              clearAuthTokens();
               navigate("/");
             }}
             className="rounded-2xl border border-rose-300 bg-white px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-50"
           >
-            Log out
+            {t("Log out")}
           </button>
         </div>
+        <LanguageSwitcher />
 
         <div className="mb-4 grid gap-4 sm:grid-cols-2">
           <div className="rounded-2xl border border-teal-900/10 bg-white p-4 shadow-sm">
-            <p className="text-xs uppercase tracking-wide text-slate-500">Assignments Today</p>
+            <p className="text-xs uppercase tracking-wide text-slate-500">
+              {t("Assignments Today")}
+            </p>
             <p className="mt-2 text-3xl font-extrabold text-slate-900">{assignments.length}</p>
           </div>
           <div className="rounded-2xl border border-teal-900/10 bg-white p-4 shadow-sm">
-            <p className="text-xs uppercase tracking-wide text-slate-500">Upcoming</p>
+            <p className="text-xs uppercase tracking-wide text-slate-500">{t("Upcoming")}</p>
             <p className="mt-2 text-3xl font-extrabold text-slate-900">{upcomingCount}</p>
           </div>
         </div>
@@ -191,10 +208,10 @@ export default function WorkerPage() {
         <div className="rounded-[28px] border border-teal-900/10 bg-white/90 p-5 shadow-[0_18px_60px_-35px_rgba(2,44,34,0.6)]">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <label htmlFor="worker-date" className="text-sm font-semibold text-slate-700">
-              Assignment date
+              {t("Assignment date")}
             </label>
             <Link to="/assignments" className="text-sm font-semibold text-teal-700 hover:underline">
-              Open full assignments page
+              {t("Open full assignments page")}
             </Link>
           </div>
           <input
@@ -208,7 +225,7 @@ export default function WorkerPage() {
 
         {loading && (
           <div className="mt-6 rounded-2xl border border-teal-900/10 bg-white p-4 text-sm text-slate-600">
-            Loading assignments...
+            {t("Loading assignments...")}
           </div>
         )}
 
@@ -232,8 +249,8 @@ export default function WorkerPage() {
 
         {!loading && !error && assignments.length === 0 && (
           <div className="mt-6 rounded-2xl border border-teal-900/10 bg-white p-6 text-center shadow-sm">
-            <p className="font-semibold text-slate-800">No assignments found.</p>
-            <p className="mt-1 text-sm text-slate-600">Try another date.</p>
+            <p className="font-semibold text-slate-800">{t("No assignments found.")}</p>
+            <p className="mt-1 text-sm text-slate-600">{t("Try another date.")}</p>
           </div>
         )}
 
@@ -275,14 +292,14 @@ export default function WorkerPage() {
 
                 <div className="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
                   <p>
-                    <span className="font-semibold text-slate-900">Date:</span>{" "}
-                    {assignment.work_date}
+                    <span className="font-semibold text-slate-900">{t("Date:")}</span>{" "}
+                    {assignment.work_date ?? t("Not set")}
                   </p>
                   <p>
-                    <span className="font-semibold text-slate-900">Shift:</span>{" "}
+                    <span className="font-semibold text-slate-900">{t("Shift:")}</span>{" "}
                     {assignment.shift_start && assignment.shift_end
                       ? `${assignment.shift_start} - ${assignment.shift_end}`
-                      : "Not set"}
+                      : t("Not set")}
                   </p>
                 </div>
 
@@ -291,7 +308,7 @@ export default function WorkerPage() {
                     <div className="mb-3 grid gap-3 sm:grid-cols-2">
                       <div>
                         <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
-                          Started At
+                          {t("Started At")}
                         </label>
                         <input
                           type="datetime-local"
@@ -302,7 +319,7 @@ export default function WorkerPage() {
                       </div>
                       <div>
                         <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
-                          Ended At
+                          {t("Ended At")}
                         </label>
                         <input
                           type="datetime-local"
@@ -328,10 +345,10 @@ export default function WorkerPage() {
                       className="rounded-xl bg-gradient-to-r from-teal-800 to-emerald-700 px-3.5 py-2 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {assignment.status?.toLowerCase() === "completed"
-                        ? "Already Completed"
+                        ? t("Already Completed")
                         : completingAssignmentId === assignment.assignment_id
-                          ? "Submitting..."
-                          : "Mark as Completed"}
+                          ? t("Submitting...")
+                          : t("Mark as Completed")}
                     </button>
                   </div>
                 )}

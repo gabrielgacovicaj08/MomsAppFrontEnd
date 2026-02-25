@@ -9,6 +9,7 @@ import AdminPage from "./pages/AdminPage";
 import AdminRoute from "./routes/AdminRoute";
 import WorkerPage from "./pages/WorkerPage";
 import WorkerRoute from "./routes/WorkerRoute";
+import I18nProvider from "./i18n/I18nProvider";
 
 const router = createBrowserRouter([
   { path: "/", element: <HomePage /> },
@@ -33,6 +34,8 @@ const router = createBrowserRouter([
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <RouterProvider router={router} />
+    <I18nProvider>
+      <RouterProvider router={router} />
+    </I18nProvider>
   </React.StrictMode>,
 );

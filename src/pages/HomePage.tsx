@@ -1,12 +1,16 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import LanguageSwitcher from "../components/LanguageSwitcher";
+import useI18n from "../i18n/useI18n";
 import { login } from "../services/auth";
-import { isTokenAdmin } from "../utils/auth";
+import { isTokenAdmin, persistAuthTokens } from "../utils/auth";
 
 export default function HomePage() {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -14,7 +18,7 @@ export default function HomePage() {
     event.preventDefault();
 
     if (!email || !password) {
-      setError("Please enter your email and password.");
+      setError(t("Please enter your email and password."));
       return;
     }
 
@@ -23,10 +27,8 @@ export default function HomePage() {
       setError(null);
 
       const response = await login({ email, password });
-      localStorage.setItem("token", response.accessToken);
-      localStorage.setItem("refreshToken", response.refreshToken);
+      persistAuthTokens(response.accessToken, response.refreshToken, rememberMe);
 
-      console.log("Login successful, token stored in localStorage.", response);
       if (isTokenAdmin(response.accessToken)) {
         navigate("/admin");
       } else {
@@ -34,7 +36,7 @@ export default function HomePage() {
       }
     } catch (err: unknown) {
       const message =
-        err instanceof Error ? err.message : "Unable to log in right now.";
+        err instanceof Error ? err.message : t("Unable to log in right now.");
       setError(message);
     } finally {
       setIsSubmitting(false);
@@ -53,27 +55,29 @@ export default function HomePage() {
                 MomsApp
               </p>
               <h1 className="mt-5 text-4xl font-extrabold leading-tight">
-                A calmer day starts here.
+                {t("A calmer day starts here.")}
               </h1>
               <p className="mt-4 max-w-sm text-sm leading-6 text-teal-50/90">
-                Check assignments, coordinate schedules, and keep your household
-                moving with less friction.
+                {t(
+                  "Check assignments, coordinate schedules, and keep your household moving with less friction.",
+                )}
               </p>
             </div>
             <p className="text-xs uppercase tracking-[0.16em] text-teal-100/85">
-              Daily planning dashboard
+              {t("Daily planning dashboard")}
             </p>
           </div>
 
           <div className="p-7 sm:p-10">
+            <LanguageSwitcher />
             <p className="text-xs uppercase tracking-[0.2em] text-teal-700">
-              Welcome back
+              {t("Welcome back")}
             </p>
             <h2 className="mt-2 text-3xl font-extrabold text-slate-900">
-              Log in to MomsApp
+              {t("Log in to MomsApp")}
             </h2>
             <p className="mt-2 text-sm text-slate-600">
-              Use your account credentials to continue.
+              {t("Use your account credentials to continue.")}
             </p>
 
             <form onSubmit={handleSubmit} className="mt-8 space-y-5">
@@ -82,7 +86,7 @@ export default function HomePage() {
                   htmlFor="email"
                   className="mb-1.5 block text-sm font-semibold text-slate-700"
                 >
-                  Email
+                  {t("Email")}
                 </label>
                 <input
                   id="email"
@@ -100,7 +104,7 @@ export default function HomePage() {
                   htmlFor="password"
                   className="mb-1.5 block text-sm font-semibold text-slate-700"
                 >
-                  Password
+                  {t("Password")}
                 </label>
                 <input
                   id="password"
@@ -109,9 +113,19 @@ export default function HomePage() {
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   className="w-full rounded-2xl border border-slate-300/90 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
-                  placeholder="Enter your password"
+                  placeholder={t("Enter your password")}
                 />
               </div>
+
+              <label className="flex items-center gap-2.5 text-sm font-medium text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(event) => setRememberMe(event.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-teal-700 focus:ring-teal-500"
+                />
+                {t("Remember me")}
+              </label>
 
               {error && (
                 <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
@@ -124,7 +138,7 @@ export default function HomePage() {
                 disabled={isSubmitting}
                 className="w-full rounded-2xl bg-gradient-to-r from-teal-800 to-emerald-700 px-4 py-3 font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isSubmitting ? "Logging in..." : "Log In"}
+                {isSubmitting ? t("Logging in...") : t("Log In")}
               </button>
             </form>
 
@@ -133,7 +147,7 @@ export default function HomePage() {
                 to="/worker"
                 className="font-semibold text-teal-700 decoration-2 underline-offset-2 hover:underline"
               >
-                Continue to worker dashboard
+                {t("Continue to worker dashboard")}
               </Link>
             </div>
           </div>
