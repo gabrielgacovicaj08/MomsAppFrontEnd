@@ -39,6 +39,16 @@ export default function AdminDashboard(controller: AdminDashboardController) {
     isUpdatingWorker,
     isTogglingWorkerId,
     workerModalMessage,
+    selectedAssignmentForWorkLogId,
+    setSelectedAssignmentForWorkLogId,
+    startedAtInput,
+    setStartedAtInput,
+    endedAtInput,
+    setEndedAtInput,
+    workLogNotes,
+    setWorkLogNotes,
+    isSavingWorkLog,
+    workLogMessage,
     handleCreateWorker,
     handleCreateStructure,
     openStructureModal,
@@ -49,6 +59,7 @@ export default function AdminDashboard(controller: AdminDashboardController) {
     closeWorkerModal,
     handleUpdateWorker,
     handleToggleWorkerActive,
+    handleSubmitWorkLog,
     handleLogout,
   } = controller;
 
@@ -318,11 +329,101 @@ export default function AdminDashboard(controller: AdminDashboardController) {
               <h2 className="text-lg font-extrabold text-slate-900">Daily Assignments</h2>
               <ul className="mt-3 space-y-2 text-sm text-slate-700">
                 {assignments.slice(0, 8).map((assignment) => (
-                  <li key={assignment.assignment_id} className="rounded-lg bg-slate-50 px-3 py-2">
-                    {assignment.first_name} {assignment.last_name} - {assignment.structure_name}
+                  <li
+                    key={assignment.assignment_id}
+                    className={`rounded-lg px-3 py-2 ${
+                      selectedAssignmentForWorkLogId === assignment.assignment_id
+                        ? "bg-teal-50 ring-1 ring-teal-200"
+                        : "bg-slate-50"
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedAssignmentForWorkLogId(assignment.assignment_id);
+                      }}
+                      className="w-full text-left"
+                    >
+                      {assignment.first_name} {assignment.last_name} -{" "}
+                      {assignment.structure_name}
+                      <span className="ml-2 text-xs text-slate-500">
+                        ({assignment.status})
+                      </span>
+                    </button>
                   </li>
                 ))}
               </ul>
+
+              {selectedAssignmentForWorkLogId && (
+                <div className="mt-4 rounded-xl border border-teal-900/10 bg-slate-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    Submit Work Log
+                  </p>
+                  <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-700">
+                        Started At
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={startedAtInput}
+                        onChange={(event) => setStartedAtInput(event.target.value)}
+                        className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-700">
+                        Ended At
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={endedAtInput}
+                        onChange={(event) => setEndedAtInput(event.target.value)}
+                        className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-3">
+                    <label className="mb-1 block text-xs font-semibold text-slate-700">
+                      Notes
+                    </label>
+                    <textarea
+                      value={workLogNotes}
+                      onChange={(event) => setWorkLogNotes(event.target.value)}
+                      rows={3}
+                      className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                    />
+                  </div>
+
+                  {workLogMessage && (
+                    <p
+                      className={`mt-2 text-sm ${
+                        workLogMessage.toLowerCase().includes("success")
+                          ? "text-emerald-700"
+                          : "text-rose-700"
+                      }`}
+                    >
+                      {workLogMessage}
+                    </p>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleSubmitWorkLog();
+                    }}
+                    disabled={
+                      isSavingWorkLog ||
+                      !startedAtInput ||
+                      !endedAtInput
+                    }
+                    className="mt-3 rounded-xl bg-gradient-to-r from-teal-800 to-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isSavingWorkLog ? "Submitting..." : "Submit Work Log"}
+                  </button>
+                </div>
+              )}
             </section>
           </div>
         )}

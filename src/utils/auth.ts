@@ -91,3 +91,84 @@ export function getCurrentUserDisplayName(): string {
 
   return "Worker";
 }
+
+export function getCurrentUserNameParts(): {
+  firstName: string;
+  lastName: string;
+} {
+  const token = localStorage.getItem("token");
+  if (!token) {
+    return { firstName: "", lastName: "" };
+  }
+
+  const payload = parseJwt(token);
+  if (!payload) {
+    return { firstName: "", lastName: "" };
+  }
+
+  const firstName =
+    typeof payload.given_name === "string"
+      ? payload.given_name
+      : typeof payload.first_name === "string"
+        ? payload.first_name
+        : "";
+
+  const lastName =
+    typeof payload.family_name === "string"
+      ? payload.family_name
+      : typeof payload.last_name === "string"
+        ? payload.last_name
+        : "";
+
+  return {
+    firstName: firstName.trim(),
+    lastName: lastName.trim(),
+  };
+}
+
+function parseNumericClaim(value: unknown): number | null {
+  if (typeof value === "number" && Number.isInteger(value) && value > 0) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!/^\d+$/.test(trimmed)) {
+      return null;
+    }
+
+    const parsed = Number.parseInt(trimmed, 10);
+    if (Number.isInteger(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+export function getCurrentUserEmployeeId(): number | null {
+  const token = localStorage.getItem("token");
+  if (!token) return null;
+
+  const payload = parseJwt(token);
+  if (!payload) return null;
+
+  const possibleClaims: unknown[] = [
+    payload.employee_id,
+    payload.employeeId,
+    payload.emp_id,
+    payload[
+      "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"
+    ],
+    payload.sub,
+  ];
+
+  for (const claim of possibleClaims) {
+    const parsed = parseNumericClaim(claim);
+    if (parsed !== null) {
+      return parsed;
+    }
+  }
+
+  return null;
+}

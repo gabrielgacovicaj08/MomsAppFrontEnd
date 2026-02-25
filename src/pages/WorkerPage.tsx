@@ -1,11 +1,32 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { getAssignmentsByDay } from "../services/assignments";
+import { getAssignmentsByEmployeeId } from "../services/assignments";
+import { createWorkLog } from "../services/workLogs";
 import type { Assignment } from "../types/assignments";
-import { getCurrentUserDisplayName, isCurrentUserAdmin } from "../utils/auth";
+import {
+  getCurrentUserDisplayName,
+  getCurrentUserEmployeeId,
+  isCurrentUserAdmin,
+} from "../utils/auth";
 
 function getToday() {
   return new Date().toISOString().split("T")[0];
+}
+
+function localInputToDateTime7(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const match = trimmed.match(
+    /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/,
+  );
+  if (!match) return null;
+
+  const date = match[1];
+  const hours = match[2];
+  const minutes = match[3];
+  const seconds = match[4] ?? "00";
+  return `${date}T${hours}:${minutes}:${seconds}.0000000`;
 }
 
 export default function WorkerPage() {
@@ -14,6 +35,18 @@ export default function WorkerPage() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState<number | null>(
+    null,
+  );
+  const [completingAssignmentId, setCompletingAssignmentId] = useState<number | null>(
+    null,
+  );
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [startedAtInput, setStartedAtInput] = useState("");
+  const [endedAtInput, setEndedAtInput] = useState("");
+  const currentWorkerName = useMemo(() => getCurrentUserDisplayName(), []);
+  const currentWorkerId = useMemo(() => getCurrentUserEmployeeId(), []);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -32,8 +65,19 @@ export default function WorkerPage() {
       try {
         setLoading(true);
         setError(null);
-        const response = await getAssignmentsByDay(date);
-        setAssignments(response.data);
+        if (!currentWorkerId) {
+          setAssignments([]);
+          setError("Employee ID is missing from your login token.");
+          return;
+        }
+
+        const response = await getAssignmentsByEmployeeId(currentWorkerId);
+        setAssignments(
+          response.data.filter((assignment) => assignment.work_date.startsWith(date)),
+        );
+        setSelectedAssignmentId(null);
+        setStartedAtInput("");
+        setEndedAtInput("");
       } catch (err: unknown) {
         const message =
           err instanceof Error ? err.message : "Failed to load assignments.";
@@ -44,7 +88,60 @@ export default function WorkerPage() {
     }
 
     fetchAssignments();
-  }, [date]);
+  }, [date, currentWorkerId]);
+
+  const handleCompleteAssignment = async (assignmentId: number) => {
+    if (!currentWorkerId) {
+      setActionError("Employee ID is missing from your login token.");
+      return;
+    }
+
+    try {
+      setCompletingAssignmentId(assignmentId);
+      setActionError(null);
+      setActionSuccess(null);
+
+      if (!startedAtInput || !endedAtInput) {
+        setActionError("Please set both start and end time before submitting.");
+        return;
+      }
+
+      const startedAt = localInputToDateTime7(startedAtInput);
+      const endedAt = localInputToDateTime7(endedAtInput);
+
+      if (!startedAt || !endedAt) {
+        setActionError("Invalid date/time format for start or end.");
+        return;
+      }
+
+      if (new Date(startedAtInput) > new Date(endedAtInput)) {
+        setActionError("End time must be after start time.");
+        return;
+      }
+
+      await createWorkLog({
+        assignment_id: String(assignmentId),
+        started_at: startedAt,
+        ended_at: endedAt,
+        notes: "Completed by worker.",
+      });
+
+      setAssignments((current) =>
+        current.map((assignment) =>
+          assignment.assignment_id === assignmentId
+            ? { ...assignment, status: "Completed" }
+            : assignment,
+        ),
+      );
+      setActionSuccess("Work log submitted. Assignment marked as completed.");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Failed to submit work log.";
+      setActionError(message);
+    } finally {
+      setCompletingAssignmentId(null);
+    }
+  };
 
   const upcomingCount = useMemo(
     () =>
@@ -61,7 +158,7 @@ export default function WorkerPage() {
           <div>
             <p className="text-xs uppercase tracking-[0.22em] text-teal-700">Worker</p>
             <h1 className="mt-1 text-3xl font-extrabold text-slate-900">
-              Welcome, {getCurrentUserDisplayName()}
+              Welcome, {currentWorkerName}
             </h1>
             <p className="mt-1 text-sm text-slate-600">
               View your day and keep track of assignments.
@@ -121,6 +218,18 @@ export default function WorkerPage() {
           </div>
         )}
 
+        {actionError && (
+          <div className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+            {actionError}
+          </div>
+        )}
+
+        {actionSuccess && (
+          <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
+            {actionSuccess}
+          </div>
+        )}
+
         {!loading && !error && assignments.length === 0 && (
           <div className="mt-6 rounded-2xl border border-teal-900/10 bg-white p-6 text-center shadow-sm">
             <p className="font-semibold text-slate-800">No assignments found.</p>
@@ -133,7 +242,22 @@ export default function WorkerPage() {
             {assignments.map((assignment) => (
               <article
                 key={assignment.assignment_id}
-                className="rounded-2xl border border-teal-900/10 bg-white/95 p-4 shadow-sm"
+                onClick={() => {
+                  setActionError(null);
+                  setActionSuccess(null);
+                  setSelectedAssignmentId((current) =>
+                    current === assignment.assignment_id
+                      ? null
+                      : assignment.assignment_id,
+                  );
+                  setStartedAtInput("");
+                  setEndedAtInput("");
+                }}
+                className={`rounded-2xl border bg-white/95 p-4 shadow-sm transition ${
+                  selectedAssignmentId === assignment.assignment_id
+                    ? "border-teal-500 ring-2 ring-teal-100"
+                    : "border-teal-900/10"
+                }`}
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
@@ -161,6 +285,56 @@ export default function WorkerPage() {
                       : "Not set"}
                   </p>
                 </div>
+
+                {selectedAssignmentId === assignment.assignment_id && (
+                  <div className="mt-4">
+                    <div className="mb-3 grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                          Started At
+                        </label>
+                        <input
+                          type="datetime-local"
+                          value={startedAtInput}
+                          onChange={(event) => setStartedAtInput(event.target.value)}
+                          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                          Ended At
+                        </label>
+                        <input
+                          type="datetime-local"
+                          value={endedAtInput}
+                          onChange={(event) => setEndedAtInput(event.target.value)}
+                          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void handleCompleteAssignment(assignment.assignment_id);
+                      }}
+                      disabled={
+                        completingAssignmentId === assignment.assignment_id ||
+                        !startedAtInput ||
+                        !endedAtInput ||
+                        assignment.status?.toLowerCase() === "completed"
+                      }
+                      className="rounded-xl bg-gradient-to-r from-teal-800 to-emerald-700 px-3.5 py-2 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {assignment.status?.toLowerCase() === "completed"
+                        ? "Already Completed"
+                        : completingAssignmentId === assignment.assignment_id
+                          ? "Submitting..."
+                          : "Mark as Completed"}
+                    </button>
+                  </div>
+                )}
               </article>
             ))}
           </div>

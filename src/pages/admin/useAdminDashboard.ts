@@ -17,6 +17,7 @@ import {
   type Worker,
   updateWorker,
 } from "../../services/workers";
+import { createWorkLog } from "../../services/workLogs";
 import type { Assignment } from "../../types/assignments";
 import { isCurrentUserAdmin } from "../../utils/auth";
 
@@ -26,6 +27,22 @@ function getToday() {
 
 function getStructureId(structure: Structure): number {
   return structure.structure_id;
+}
+
+function localInputToDateTime7(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const match = trimmed.match(
+    /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/,
+  );
+  if (!match) return null;
+
+  const date = match[1];
+  const hours = match[2];
+  const minutes = match[3];
+  const seconds = match[4] ?? "00";
+  return `${date}T${hours}:${minutes}:${seconds}.0000000`;
 }
 
 export type AdminDashboardController = {
@@ -57,6 +74,18 @@ export type AdminDashboardController = {
   isUpdatingWorker: boolean;
   isTogglingWorkerId: number | null;
   workerModalMessage: string | null;
+  selectedAssignmentForWorkLogId: number | null;
+  setSelectedAssignmentForWorkLogId: React.Dispatch<
+    React.SetStateAction<number | null>
+  >;
+  startedAtInput: string;
+  setStartedAtInput: React.Dispatch<React.SetStateAction<string>>;
+  endedAtInput: string;
+  setEndedAtInput: React.Dispatch<React.SetStateAction<string>>;
+  workLogNotes: string;
+  setWorkLogNotes: React.Dispatch<React.SetStateAction<string>>;
+  isSavingWorkLog: boolean;
+  workLogMessage: string | null;
   handleCreateWorker: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
   handleCreateStructure: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
   openStructureModal: (structure: Structure) => void;
@@ -67,6 +96,7 @@ export type AdminDashboardController = {
   closeWorkerModal: () => void;
   handleUpdateWorker: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
   handleToggleWorkerActive: () => Promise<void>;
+  handleSubmitWorkLog: () => Promise<void>;
   handleLogout: () => void;
 };
 
@@ -120,6 +150,14 @@ export default function useAdminDashboard(): AdminDashboardController {
   });
   const [isUpdatingStructure, setIsUpdatingStructure] = useState(false);
   const [structureModalMessage, setStructureModalMessage] = useState<string | null>(null);
+  const [selectedAssignmentForWorkLogId, setSelectedAssignmentForWorkLogId] = useState<
+    number | null
+  >(null);
+  const [startedAtInput, setStartedAtInput] = useState("");
+  const [endedAtInput, setEndedAtInput] = useState("");
+  const [workLogNotes, setWorkLogNotes] = useState("Completed by admin.");
+  const [isSavingWorkLog, setIsSavingWorkLog] = useState(false);
+  const [workLogMessage, setWorkLogMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -145,6 +183,10 @@ export default function useAdminDashboard(): AdminDashboardController {
         setStructures(structuresResponse.data);
         setWorkers(workersResponse.data);
         setAssignments(assignmentsResponse.data);
+        setSelectedAssignmentForWorkLogId(null);
+        setStartedAtInput("");
+        setEndedAtInput("");
+        setWorkLogMessage(null);
       } catch (err: unknown) {
         const message =
           err instanceof Error ? err.message : "Failed to load admin dashboard.";
@@ -419,6 +461,56 @@ export default function useAdminDashboard(): AdminDashboardController {
     navigate("/");
   };
 
+  const handleSubmitWorkLog = async () => {
+    if (!selectedAssignmentForWorkLogId) {
+      setWorkLogMessage("Select an assignment first.");
+      return;
+    }
+
+    if (!startedAtInput || !endedAtInput) {
+      setWorkLogMessage("Started at and ended at are required.");
+      return;
+    }
+
+    const startedAt = localInputToDateTime7(startedAtInput);
+    const endedAt = localInputToDateTime7(endedAtInput);
+    if (!startedAt || !endedAt) {
+      setWorkLogMessage("Invalid start/end date-time format.");
+      return;
+    }
+
+    if (new Date(startedAtInput) > new Date(endedAtInput)) {
+      setWorkLogMessage("Ended at must be after started at.");
+      return;
+    }
+
+    try {
+      setIsSavingWorkLog(true);
+      setWorkLogMessage(null);
+
+      await createWorkLog({
+        assignment_id: String(selectedAssignmentForWorkLogId),
+        started_at: startedAt,
+        ended_at: endedAt,
+        notes: workLogNotes.trim() || "Completed by admin.",
+      });
+
+      setAssignments((current) =>
+        current.map((assignment) =>
+          assignment.assignment_id === selectedAssignmentForWorkLogId
+            ? { ...assignment, status: "Completed" }
+            : assignment,
+        ),
+      );
+      setWorkLogMessage("Work log submitted successfully.");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to submit work log.";
+      setWorkLogMessage(message);
+    } finally {
+      setIsSavingWorkLog(false);
+    }
+  };
+
   return {
     date,
     setDate,
@@ -448,6 +540,16 @@ export default function useAdminDashboard(): AdminDashboardController {
     isUpdatingWorker,
     isTogglingWorkerId,
     workerModalMessage,
+    selectedAssignmentForWorkLogId,
+    setSelectedAssignmentForWorkLogId,
+    startedAtInput,
+    setStartedAtInput,
+    endedAtInput,
+    setEndedAtInput,
+    workLogNotes,
+    setWorkLogNotes,
+    isSavingWorkLog,
+    workLogMessage,
     handleCreateWorker,
     handleCreateStructure,
     openStructureModal,
@@ -458,6 +560,7 @@ export default function useAdminDashboard(): AdminDashboardController {
     closeWorkerModal,
     handleUpdateWorker,
     handleToggleWorkerActive,
+    handleSubmitWorkLog,
     handleLogout,
   };
 }

@@ -36,6 +36,24 @@ export async function getWorkers() {
   }
 }
 
+export async function getAvailableEmployeesPerDay(date: string) {
+  try {
+    return await instance.get<Worker[]>(
+      `/api/Employee/available-employee-per-day/${date}`,
+    );
+  } catch {
+    // Fall through to alternate endpoint names if needed.
+  }
+
+  try {
+    return await instance.get<Worker[]>(
+      `/api/Employee/available-employees-per-day/${date}`,
+    );
+  } catch {
+    return instance.get<Worker[]>(`/api/Workers/available-per-day/${date}`);
+  }
+}
+
 export async function createWorker(payload: CreateWorkerPayload) {
   try {
     return await instance.post<Worker>(
