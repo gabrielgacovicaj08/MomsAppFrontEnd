@@ -453,14 +453,14 @@ export default function AdminDashboard(controller: AdminDashboardController) {
       </div>
 
       {selectedStructure && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
-          <div className="w-full max-w-2xl rounded-3xl border border-teal-900/10 bg-white shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 px-4 py-4 sm:items-center sm:py-6">
+          <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col rounded-3xl border border-teal-900/10 bg-white shadow-2xl sm:max-h-[calc(100vh-3rem)]">
             <img
               src={getStructureImageUrl(selectedStructure.name)}
               alt={selectedStructure.name}
-              className="h-56 w-full rounded-t-3xl object-cover"
+              className="h-56 w-full shrink-0 rounded-t-3xl object-cover"
             />
-            <div className="p-5">
+            <div className="overflow-y-auto p-5">
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
                   <p className="text-xs uppercase tracking-[0.2em] text-teal-700">{t("Structure")}</p>
