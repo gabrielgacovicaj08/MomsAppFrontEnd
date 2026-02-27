@@ -1,7 +1,7 @@
 import axios from "axios";
 import { getStoredToken } from "../utils/auth";
 
-const BASE_URL = "https://localhost:7290";
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://localhost:7290";
 
 export const instance = axios.create({
   baseURL: BASE_URL,
